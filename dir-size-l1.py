@@ -8,23 +8,29 @@ import shlex
 def get_folder_sizes(directory):
     folder_sizes = []
     num_folders = 0
+
+    # Count the number of folders
     for entry in os.scandir(directory):
         if entry.is_dir() and not entry.is_symlink():
             num_folders += 1
 
     with tqdm(total=num_folders, desc="Calculating folder sizes") as pbar:
+        # Traverse the folders
         for entry in os.scandir(directory):
             if entry.is_dir() and not entry.is_symlink():
                 total_size = 0
                 last_accessed_time = os.path.getatime(entry.path)
+
+                # Get file sizes and last accessed times
                 for root, dirs, files in os.walk(entry.path, followlinks=False):
                     for file in files:
                         file_path = os.path.join(root, file)
-                        quoted_file_path = shlex.quote(file_path)
-                        total_size += os.stat(quoted_file_path).st_size
-                        file_last_accessed_time = os.path.getatime(quoted_file_path)
+                        total_size += os.path.getsize(file_path)
+
+                        file_last_accessed_time = os.path.getatime(file_path)
                         if file_last_accessed_time > last_accessed_time:
                             last_accessed_time = file_last_accessed_time
+
                 folder_sizes.append((entry.path, total_size, last_accessed_time))
                 folder_sizes.extend(get_folder_sizes(entry.path))  # Recursively process subdirectories
                 pbar.update(1)
