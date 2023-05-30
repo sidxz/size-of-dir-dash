@@ -21,15 +21,21 @@ def get_folder_sizes(directory):
                 total_size = 0
                 last_accessed_time = os.path.getatime(entry.path)
 
-                # Get file sizes and last accessed times
-                for root, dirs, files in os.walk(entry.path, followlinks=False):
-                    for file in files:
-                        file_path = os.path.join(root, file)
-                        total_size += os.path.getsize(file_path)
+                try:
+                    # Get file sizes and last accessed times
+                    for root, dirs, files in os.walk(entry.path, followlinks=False):
+                        for file in files:
+                            file_path = os.path.join(root, file)
+                            try:
+                                total_size += os.path.getsize(file_path)
 
-                        file_last_accessed_time = os.path.getatime(file_path)
-                        if file_last_accessed_time > last_accessed_time:
-                            last_accessed_time = file_last_accessed_time
+                                file_last_accessed_time = os.path.getatime(file_path)
+                                if file_last_accessed_time > last_accessed_time:
+                                    last_accessed_time = file_last_accessed_time
+                            except Exception as e:
+                                print(f"Error processing file: {file_path}. Error: {str(e)}")
+                except Exception as e:
+                    print(f"Error accessing folder: {entry.path}. Error: {str(e)}")
 
                 folder_sizes.append((entry.path, total_size, last_accessed_time))
                 folder_sizes.extend(get_folder_sizes(entry.path))  # Recursively process subdirectories
