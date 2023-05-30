@@ -1,237 +1,130 @@
 import argparse
 import os
-from datetime import datetime
 from tqdm import tqdm
-import shlex
+import matplotlib.pyplot as plt
 
+# Function to calculate the total size of a directory
+def calculate_directory_size(directory):
+    total_size = 0
 
+    for root, dirs, files in os.walk(directory, followlinks=False):
+        for file in files:
+            file_path = os.path.join(root, file)
+            try:
+                total_size += os.path.getsize(file_path)
+            except OSError as e:
+                print(f"Error accessing file: {file_path}. Error: {str(e)}")
+            except Exception as e:
+                print(f"Error processing file: {file_path}. Error: {str(e)}")
+
+    return total_size
+
+# Function to get folder sizes
 def get_folder_sizes(directory):
-    folder_sizes = []
-    num_folders = 0
+    folder_sizes = {}
+    total_size = calculate_directory_size(directory)
 
-    # Count the number of folders
-    for entry in os.scandir(directory):
-        if entry.is_dir() and not entry.is_symlink():
-            num_folders += 1
-
-    with tqdm(total=num_folders, desc="Calculating folder sizes") as pbar:
-        # Traverse the folders
-        for entry in os.scandir(directory):
-            if entry.is_dir() and not entry.is_symlink():
-                total_size = 0
-                last_accessed_time = os.path.getatime(entry.path)
-
+    with tqdm(total=total_size, unit='B', unit_scale=True, desc="Calculating folder sizes") as pbar:
+        for root, dirs, files in os.walk(directory, followlinks=False):
+            for file in files:
+                file_path = os.path.join(root, file)
                 try:
-                    # Get file sizes and last accessed times
-                    for root, dirs, files in os.walk(entry.path, followlinks=False):
-                        for file in files:
-                            file_path = os.path.join(root, file)
-                            try:
-                                total_size += os.path.getsize(file_path)
+                    file_size = os.path.getsize(file_path)
 
-                                file_last_accessed_time = os.path.getatime(file_path)
-                                if file_last_accessed_time > last_accessed_time:
-                                    last_accessed_time = file_last_accessed_time
-                            except Exception as e:
-                                print(f"Error processing file: {file_path}. Error: {str(e)}")
+                    folder_path = os.path.dirname(file_path)
+                    if folder_path not in folder_sizes:
+                        folder_sizes[folder_path] = 0
+                    folder_sizes[folder_path] += file_size
+
+                    pbar.update(file_size)
+                except OSError as e:
+                    print(f"Error accessing file: {file_path}. Error: {str(e)}")
                 except Exception as e:
-                    print(f"Error accessing folder: {entry.path}. Error: {str(e)}")
+                    print(f"Error processing file: {file_path}. Error: {str(e)}")
 
-                folder_sizes.append((entry.path, total_size, last_accessed_time))
-                folder_sizes.extend(get_folder_sizes(entry.path))  # Recursively process subdirectories
-                pbar.update(1)
+    return folder_sizes, total_size
 
-    return folder_sizes
-
-
-def consolidate_folder_sizes(folder_sizes):
-    consolidated_sizes = {}
-    consolidated_last_accessed_times = {}
-    for folder, size, last_accessed_time in folder_sizes:
-        folder_name = os.path.basename(folder)
-        if folder_name not in consolidated_sizes:
-            consolidated_sizes[folder_name] = size
-            consolidated_last_accessed_times[folder_name] = last_accessed_time
-        else:
-            consolidated_sizes[folder_name] += size
-            if last_accessed_time > consolidated_last_accessed_times[folder_name]:
-                consolidated_last_accessed_times[folder_name] = last_accessed_time
-    return consolidated_sizes, consolidated_last_accessed_times
-
-
-def convert_timestamp(timestamp):
-    access_time = datetime.fromtimestamp(timestamp)
-    return access_time.strftime('%Y-%m-%d %H:%M:%S')
-
-
-def generate_html_report(folder_sizes, consolidated_sizes, consolidated_last_accessed_times):
-    report = """
+# Function to generate HTML report with chart
+def generate_html_report(folder_sizes, total_size, chart_file):
+    # Generate the HTML report based on folder sizes and total size
+    report = f"""
     <html>
-        <head>
-            <title>Folder Sizes Report</title>
-            <style>
-                body {
-                    font-family: Arial, sans-serif;
-                }
-                h1 {
-                    color: #333333;
-                }
-                table {
-                    border-collapse: collapse;
-                    width: 100%;
-                }
-                th, td {
-                    padding: 8px;
-                    text-align: left;
-                    border-bottom: 1px solid #dddddd;
-                }
-                th {
-                    background-color: #f2f2f2;
-                }
-                .sortable {
-                    cursor: pointer;
-                }
-                .chart-container {
-                    width: 600px;
-                    margin: 20px auto;
-                    text-align: center;
-                }
-            </style>
-            <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-            <script>
-                function sortTable(columnIndex) {
-                    var table, rows, switching, i, x, y, shouldSwitch;
-                    table = document.getElementById("reportTable");
-                    switching = true;
-                    while (switching) {
-                        switching = false;
-                        rows = table.rows;
-                        for (i = 1; i < (rows.length - 1); i++) {
-                            shouldSwitch = false;
-                            x = rows[i].getElementsByTagName("TD")[columnIndex];
-                            y = rows[i + 1].getElementsByTagName("TD")[columnIndex];
-                            if (isNaN(x.innerHTML)) {
-                                if (x.innerHTML.toLowerCase() > y.innerHTML.toLowerCase()) {
-                                    shouldSwitch = true;
-                                    break;
-                                }
-                            } else {
-                                if (parseFloat(x.innerHTML) < parseFloat(y.innerHTML)) {
-                                    shouldSwitch = true;
-                                    break;
-                                }
-                            }
-                        }
-                        if (shouldSwitch) {
-                            rows[i].parentNode.insertBefore(rows[i + 1], rows[i]);
-                            switching = true;
-                        }
-                    }
-                }
-            </script>
-        </head>
-        <body>
-            <h1>Folder Sizes Report</h1>
-            <h2>Individual Folder Sizes</h2>
-            <table id="reportTable">
-                <tr>
-                    <th class="sortable" onclick="sortTable(0)">Folder</th>
-                    <th class="sortable" onclick="sortTable(1)">Size (terabytes)</th>
-                    <th class="sortable" onclick="sortTable(2)">Last Accessed Time</th>
-                </tr>
+    <head>
+        <title>Folder Sizes Report</title>
+        <style>
+            table, th, td {{
+                border: 1px solid black;
+                border-collapse: collapse;
+                padding: 5px;
+                text-align: left;
+            }}
+        </style>
+        <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    </head>
+    <body>
+        <h1>Folder Sizes Report</h1>
+        <div id="chart"></div>
+        <table>
+            <tr>
+                <th>Folder</th>
+                <th>Size (Bytes)</th>
+                <th>Size (Human Readable)</th>
+            </tr>
     """
 
-    for folder, size, last_accessed_time in folder_sizes:
-        size_in_tb = size / (1024 ** 4)  # Convert to terabytes
-        access_time = convert_timestamp(last_accessed_time)
+    chart_data = []
+    chart_labels = []
+    for folder, size in sorted(folder_sizes.items(), key=lambda x: x[1], reverse=True):
+        size_human_readable = sizeof_fmt(size)
         report += f"""
-                <tr>
-                    <td>{folder}</td>
-                    <td>{size_in_tb:.2f} TB</td>
-                    <td>{access_time}</td>
-                </tr>
+            <tr>
+                <td>{folder}</td>
+                <td>{size}</td>
+                <td>{size_human_readable}</td>
+            </tr>
         """
+        chart_data.append(size)
+        chart_labels.append(folder)
 
-    report += """
-            </table>
-
-            <h2>Consolidated Folder Sizes</h2>
-            <table id="reportTable">
-                <tr>
-                    <th class="sortable" onclick="sortTable(0)">Folder</th>
-                    <th class="sortable" onclick="sortTable(1)">Size (terabytes)</th>
-                    <th class="sortable" onclick="sortTable(2)">Last Accessed Time</th>
-                </tr>
-    """
-
-    for folder, size in consolidated_sizes.items():
-        size_in_tb = size / (1024 ** 4)  # Convert to terabytes
-        access_time = convert_timestamp(consolidated_last_accessed_times[folder])
-        report += f"""
-                <tr>
-                    <td>{folder}</td>
-                    <td>{size_in_tb:.2f} TB</td>
-                    <td>{access_time}</td>
-                </tr>
-        """
-
-    report += """
-            </table>
-
-            <div class="chart-container">
-                <canvas id="chart"></canvas>
-            </div>
-
-            <script>
-                var ctx = document.getElementById('chart').getContext('2d');
-                var chart = new Chart(ctx, {
-                    type: 'pie',
-                    data: {
-                        labels: ['"""+ "', '".join([os.path.basename(folder) for folder, _, _ in folder_sizes])+ """'],
-                        datasets: [{
-                            label: 'Top-level Directory Sizes',
-                            data: ["""+ ", ".join([str(size) for _, size, _ in folder_sizes])+ """],
-                            backgroundColor: [
-                                '#FF6384',
-                                '#36A2EB',
-                                '#FFCE56',
-                                '#8bc34a',
-                                '#e91e63',
-                                '#00bcd4',
-                                '#f44336',
-                                '#9c27b0',
-                                '#673ab7',
-                                '#ff5722',
-                                '#795548',
-                                '#607d8b',
-                                '#03a9f4',
-                                '#ff9800',
-                                '#009688',
-                                '#ffeb3b',
-                                '#9e9e9e',
-                                '#ff00ff',
-                                '#0000ff',
-                                '#00ff00'
-                            ]
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false
-                    }
-                });
-            </script>
-
-        </body>
+    total_size_human_readable = sizeof_fmt(total_size)
+    report += f"""
+            <tr>
+                <td><strong>Total Size</strong></td>
+                <td><strong>{total_size}</strong></td>
+                <td><strong>{total_size_human_readable}</strong></td>
+            </tr>
+        </table>
+        <script>
+            var data = [{{
+                values: {chart_data},
+                labels: {chart_labels},
+                type: 'pie'
+            }}];
+            
+            var layout = {{
+                title: 'Folder Size Distribution'
+            }};
+            
+            Plotly.newPlot('chart', data, layout);
+        </script>
+    </body>
     </html>
     """
+
     return report
 
-
+# Function to save the report to a file
 def save_report(report, output_file):
     with open(output_file, 'w') as f:
         f.write(report)
 
+# Helper function to format file sizes in human-readable format
+def sizeof_fmt(num, suffix='B'):
+    for unit in ['','Ki','Mi','Gi','Ti','Pi','Ei','Zi']:
+        if abs(num) < 1024.0:
+            return f"{num:.2f} {unit}{suffix}"
+        num /= 1024.0
+    return f"{num:.2f} Yi{suffix}"
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Generate folder sizes report')
@@ -239,10 +132,12 @@ if __name__ == '__main__':
     parser.add_argument('output_file', help='Output file path')
     args = parser.parse_args()
 
-    folder_sizes = get_folder_sizes(args.directory)
-    consolidated_sizes, consolidated_last_accessed_times = consolidate_folder_sizes(folder_sizes)
+    if not os.path.isdir(args.directory):
+        print("Error: The specified directory does not exist.")
+        exit(1)
 
-    report = generate_html_report(folder_sizes, consolidated_sizes, consolidated_last_accessed_times)
+    folder_sizes, total_size = get_folder_sizes(args.directory)
+    report = generate_html_report(folder_sizes, total_size)
 
     save_report(report, args.output_file)
     print(f"Report generated and saved to {args.output_file}.")
