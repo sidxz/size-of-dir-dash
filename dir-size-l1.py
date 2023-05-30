@@ -2,6 +2,7 @@ import argparse
 import os
 from datetime import datetime
 from tqdm import tqdm
+import shlex
 
 
 def get_folder_sizes(directory):
@@ -19,9 +20,9 @@ def get_folder_sizes(directory):
                 for root, dirs, files in os.walk(entry.path, followlinks=False):
                     for file in files:
                         file_path = os.path.join(root, file)
-                        file_path = f'"{file_path}"'  # Wrap file path with double quotes
-                        total_size += os.stat(file_path).st_size
-                        file_last_accessed_time = os.path.getatime(file_path)
+                        quoted_file_path = shlex.quote(file_path)
+                        total_size += os.stat(quoted_file_path).st_size
+                        file_last_accessed_time = os.path.getatime(quoted_file_path)
                         if file_last_accessed_time > last_accessed_time:
                             last_accessed_time = file_last_accessed_time
                 folder_sizes.append((entry.path, total_size, last_accessed_time))
